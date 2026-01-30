@@ -16,6 +16,15 @@ You can start editing the popup by modifying `popup.tsx`. It should auto-update 
 
 For further guidance, [visit our Documentation](https://docs.plasmo.com/)
 
+## Backend (required)
+
+Follow-ups/reminders require the backend service in `[backend/](backend/)`.
+
+- Local dev: run `npm run dev` in `send-and/backend`
+- Production: deploy the backend (e.g. Render) and point the extension Settings to your hosted backend URL
+
+See `[backend/README.md](backend/README.md)` for Postgres + OAuth setup.
+
 ## Making production build
 
 Run the following:

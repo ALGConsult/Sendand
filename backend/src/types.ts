@@ -5,6 +5,7 @@ export type JobType = "followup" | "reminder"
 export type JobStatus = "scheduled" | "pending_thread" | "sent" | "cancelled" | "failed"
 
 export type StoredAuth = {
+  userId: string
   apiKey: string
   createdAt: string // ISO
   emailAddress: string
@@ -13,7 +14,6 @@ export type StoredAuth = {
 }
 
 export type FollowupJob = {
-  apiKey: string
   id: string
   type: "followup"
   status: JobStatus
@@ -39,7 +39,6 @@ export type FollowupJob = {
 }
 
 export type ReminderJob = {
-  apiKey: string
   id: string
   type: "reminder"
   status: JobStatus
@@ -61,13 +60,7 @@ export type ReminderJob = {
   originalDateHeader?: string
   originalSubjectHeader?: string
   lastError?: string
-  followUpHtml?: string
 }
 
 export type Job = FollowupJob | ReminderJob
-
-export type StoreShape = {
-  authByApiKey: Record<string, StoredAuth>
-  jobsById: Record<string, Job>
-}
 

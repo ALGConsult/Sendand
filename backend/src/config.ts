@@ -5,6 +5,7 @@ export type AppConfig = {
   googleClientSecret: string | null
   allowedOrigins: string
   storePath: string
+  databaseUrl: string | null
 }
 
 function env(key: string): string | undefined {
@@ -23,6 +24,7 @@ export function getConfig(): AppConfig {
     googleClientSecret: env("GOOGLE_CLIENT_SECRET") ?? null,
     allowedOrigins: env("ALLOWED_ORIGINS") ?? "*",
     storePath: env("STORE_PATH") ?? "./data/store.json",
+    databaseUrl: env("DATABASE_URL") ?? null,
   }
 }
 

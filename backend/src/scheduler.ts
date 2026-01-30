@@ -1,6 +1,123 @@
-import type { Job } from "./types"
-import { nowIso, withStore } from "./store"
+import type { CancelRule, Job, StoredAuth } from "./types"
+import { dbQuery } from "./db.js"
 import { getAccessToken, getMessageBodyHtml, getMessageMetadata, getThreadMetadata, searchSentMessage, sendReminderEmail, sendReplyInThread, threadHasInboundReply } from "./gmail"
+
+function nowIso(): string {
+  return new Date().toISOString()
+}
+
+type UserRow = {
+  id: string
+  email_address: string
+  refresh_token: string
+  cancel_rule: CancelRule
+  created_at: string
+  api_key: string
+}
+
+type JobRow = {
+  id: string
+  user_id: string
+  type: "followup" | "reminder"
+  status: string
+  created_at: string
+  scheduled_at: string
+  sent_at: string
+  to_emails: string[]
+  cc_emails: string[] | null
+  subject: string
+  followup_html: string | null
+  note_html: string | null
+  thread_id: string | null
+  original_message_gmail_id: string | null
+  original_internal_date_ms: string | null
+  original_rfc_message_id: string | null
+  original_references: string | null
+  original_from_header: string | null
+  original_to_header: string | null
+  original_cc_header: string | null
+  original_date_header: string | null
+  original_subject_header: string | null
+  last_error: string | null
+}
+
+function rowToJob(r: JobRow): Job {
+  const base: any = {
+    id: r.id,
+    type: r.type,
+    status: r.status,
+    createdAt: new Date(r.created_at).toISOString(),
+    scheduledAt: new Date(r.scheduled_at).toISOString(),
+    sentAt: new Date(r.sent_at).toISOString(),
+    to: r.to_emails ?? [],
+    cc: r.cc_emails ?? undefined,
+    subject: r.subject,
+    threadId: r.thread_id ?? undefined,
+    originalMessageGmailId: r.original_message_gmail_id ?? undefined,
+    originalInternalDateMs: r.original_internal_date_ms ? Number(r.original_internal_date_ms) : undefined,
+    originalRfcMessageId: r.original_rfc_message_id ?? undefined,
+    originalReferences: r.original_references ?? undefined,
+    originalFromHeader: r.original_from_header ?? undefined,
+    originalToHeader: r.original_to_header ?? undefined,
+    originalCcHeader: r.original_cc_header ?? undefined,
+    originalDateHeader: r.original_date_header ?? undefined,
+    originalSubjectHeader: r.original_subject_header ?? undefined,
+    lastError: r.last_error ?? undefined,
+  }
+
+  if (r.type === "followup") {
+    base.followUpHtml = r.followup_html ?? ""
+  } else {
+    base.noteHtml = r.note_html ?? ""
+  }
+  return base as Job
+}
+
+async function persistJob(userId: string, job: Job): Promise<void> {
+  const followupHtml = job.type === "followup" ? job.followUpHtml : null
+  const noteHtml = job.type === "reminder" ? job.noteHtml : null
+
+  await dbQuery(
+    `UPDATE jobs SET
+      status = $3,
+      to_emails = $4,
+      cc_emails = $5,
+      followup_html = $6,
+      note_html = $7,
+      thread_id = $8,
+      original_message_gmail_id = $9,
+      original_internal_date_ms = $10,
+      original_rfc_message_id = $11,
+      original_references = $12,
+      original_from_header = $13,
+      original_to_header = $14,
+      original_cc_header = $15,
+      original_date_header = $16,
+      original_subject_header = $17,
+      last_error = $18
+     WHERE id = $1 AND user_id = $2`,
+    [
+      job.id,
+      userId,
+      job.status,
+      job.to,
+      job.cc ?? null,
+      followupHtml,
+      noteHtml,
+      job.threadId ?? null,
+      job.originalMessageGmailId ?? null,
+      job.originalInternalDateMs ?? null,
+      job.originalRfcMessageId ?? null,
+      job.originalReferences ?? null,
+      job.originalFromHeader ?? null,
+      job.originalToHeader ?? null,
+      job.originalCcHeader ?? null,
+      job.originalDateHeader ?? null,
+      job.originalSubjectHeader ?? null,
+      job.lastError ?? null,
+    ]
+  )
+}
 
 function isDue(job: Job, nowMs: number): boolean {
   if (job.status === "cancelled" || job.status === "sent") return false
@@ -83,7 +200,7 @@ async function resolveOriginalForReminderIfNeeded(job: Job, accessToken: string)
   return job
 }
 
-async function resolveThreadIfNeeded(apiKey: string, job: Job, accessToken: string, authEmail: string): Promise<Job> {
+async function resolveThreadIfNeeded(job: Job, accessToken: string, authEmail: string): Promise<Job> {
   if (job.type !== "followup") return job
   if (job.threadId && job.originalMessageGmailId && job.originalInternalDateMs) return job
 
@@ -127,8 +244,9 @@ async function executeDueJob(authEmail: string, cancelRule: "any_inbound" | "rec
 
   try {
     if (job.type === "followup") {
+      const followup = job
       if (!job.threadId || !job.originalMessageGmailId || !job.originalInternalDateMs) {
-        job = await resolveThreadIfNeeded(job.apiKey, job, accessToken, authEmail)
+        job = await resolveThreadIfNeeded(job, accessToken, authEmail)
         if (!job.threadId || !job.originalMessageGmailId || !job.originalInternalDateMs) return job
       }
 
@@ -156,7 +274,7 @@ async function executeDueJob(authEmail: string, cancelRule: "any_inbound" | "rec
         htmlBody: await (async () => {
           // Include quoted original message so the follow-up contains the prior chain context.
           const originalHtml = job.originalMessageGmailId ? await getMessageBodyHtml(accessToken, job.originalMessageGmailId) : ""
-          if (!originalHtml) return job.followUpHtml ?? ""
+          if (!originalHtml) return followup.followUpHtml
 
           const quoted = `
             ${buildOriginalHeaderBlockHtml({
@@ -171,7 +289,7 @@ async function executeDueJob(authEmail: string, cancelRule: "any_inbound" | "rec
             </blockquote>
           `.trim()
 
-          return `${job.followUpHtml}<br/><br/>${quoted}`
+          return `${followup.followUpHtml}<br/><br/>${quoted}`
         })(),
         inReplyToMessageId: job.originalRfcMessageId ?? "",
         references: job.originalReferences ?? "",
@@ -215,53 +333,77 @@ async function executeDueJob(authEmail: string, cancelRule: "any_inbound" | "rec
 }
 
 export async function schedulerTick(): Promise<void> {
-  await withStore(async (store) => {
-    const nowMs = Date.now()
+  const nowMs = Date.now()
 
-    // Process per API key to reuse tokens.
-    const apiKeys = Object.keys(store.authByApiKey)
-    for (const apiKey of apiKeys) {
-      const auth = store.authByApiKey[apiKey]
-      if (!auth) continue
+  const { rows: users } = await dbQuery<UserRow>(
+    `SELECT id, email_address, refresh_token, cancel_rule, created_at, api_key
+     FROM users`
+  )
 
-      // Find jobs for this apiKey
-      const jobs = Object.values(store.jobsById).filter((j) => j.apiKey === apiKey)
-      if (jobs.length === 0) continue
+  for (const u of users) {
+    const auth: StoredAuth = {
+      userId: u.id,
+      apiKey: u.api_key,
+      createdAt: new Date(u.created_at).toISOString(),
+      emailAddress: u.email_address,
+      refreshToken: u.refresh_token,
+      cancelRule: u.cancel_rule,
+    }
 
-      let accessToken: string
-      try {
-        accessToken = await getAccessToken(auth)
-      } catch (e: any) {
-        // Mark all due jobs as failed with auth error.
-        for (const j of jobs) {
-          if (isDue(j, nowMs) && j.status !== "sent" && j.status !== "cancelled") {
-            j.status = "failed"
-            j.lastError = `Auth error: ${e?.message ?? "token refresh failed"}`
-          }
+    const { rows: jobRows } = await dbQuery<JobRow>(
+      `SELECT *
+       FROM jobs
+       WHERE user_id = $1 AND status NOT IN ('sent','cancelled')
+       ORDER BY scheduled_at ASC`,
+      [u.id]
+    )
+
+    if (jobRows.length === 0) continue
+
+    let accessToken: string
+    try {
+      accessToken = await getAccessToken(auth)
+    } catch (e: any) {
+      // Mark due jobs as failed with auth error.
+      const msg = `Auth error: ${e?.message ?? "token refresh failed"}`
+      for (const r of jobRows) {
+        const job = rowToJob(r)
+        if (isDue(job, nowMs) && job.status !== "sent" && job.status !== "cancelled") {
+          job.status = "failed"
+          job.lastError = msg
+          await persistJob(u.id, job)
         }
-        continue
       }
+      continue
+    }
 
-      // Resolve thread IDs early for followups (even if not due) to make matching reliable.
-      for (const j of jobs) {
-        if (!shouldResolveThread(j)) continue
+    // Pre-resolve followups for reply-all + metadata.
+    for (const r of jobRows) {
+      let job = rowToJob(r)
+
+      if (shouldResolveThread(job)) {
         try {
-          await resolveThreadIfNeeded(apiKey, j, accessToken, auth.emailAddress)
+          job = await resolveThreadIfNeeded(job, accessToken, auth.emailAddress)
         } catch (e: any) {
-          j.status = "pending_thread"
-          j.lastError = e?.message ?? "Thread resolution failed"
+          job.status = "pending_thread"
+          job.lastError = e?.message ?? "Thread resolution failed"
         }
-      }
-
-      // Execute due jobs
-      for (const j of jobs) {
-        const updated = await executeDueJob(auth.emailAddress, auth.cancelRule, j, accessToken)
-        store.jobsById[updated.id] = updated
+        await persistJob(u.id, job)
       }
     }
 
-    // update a heartbeat time? (not persisted for now)
-  })
+    // Execute due jobs
+    for (const r of jobRows) {
+      let job = rowToJob(r)
+      const updated = await executeDueJob(auth.emailAddress, auth.cancelRule, job, accessToken)
+      if (updated !== job || updated.status !== job.status || updated.lastError !== job.lastError) {
+        await persistJob(u.id, updated)
+      } else if (isDue(job, nowMs)) {
+        // still persist to capture any resolution side-effects (e.g. reminder/followup resolution)
+        await persistJob(u.id, updated)
+      }
+    }
+  }
 }
 
 export function startScheduler(pollMs = 10_000): void {

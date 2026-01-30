@@ -1,12 +1,14 @@
 import "dotenv/config"
 
+import crypto from "node:crypto"
 import express from "express"
 
 import { getConfig } from "./config.js"
 import { requireApiKey } from "./auth.js"
 import { exchangeCodeForTokens, generateApiKey, generateState, getGoogleAuthUrl, getGoogleUserEmail } from "./google.js"
-import { nowIso, withStore } from "./store.js"
-import { cancelJobForApiKey, createJobForApiKey, isValidIso, listJobsForApiKey, normalizeRecipients } from "./jobs.js"
+import { dbQuery } from "./db.js"
+import { ensureSchema } from "./schema.js"
+import { cancelJobForUser, createJobForUser, isValidIso, listJobsForUser, normalizeRecipients } from "./jobs.js"
 import { startScheduler } from "./scheduler.js"
 
 function allowCors(allowedOriginsRaw: string) {
@@ -40,6 +42,7 @@ function allowCors(allowedOriginsRaw: string) {
 
 async function main() {
   const cfg = getConfig()
+  await ensureSchema()
 
   const app = express()
   app.use(allowCors(cfg.allowedOrigins))
@@ -101,15 +104,17 @@ async function main() {
       const emailAddress = await getGoogleUserEmail(tokens.access_token)
       const apiKey = generateApiKey()
 
-      await withStore((store) => {
-        store.authByApiKey[apiKey] = {
-          apiKey,
-          createdAt: nowIso(),
-          emailAddress,
-          refreshToken: tokens.refresh_token!,
-          cancelRule: "any_inbound",
-        }
-      })
+      const userId = crypto.randomUUID()
+      await dbQuery(
+        `INSERT INTO users (id, email_address, api_key, refresh_token, cancel_rule)
+         VALUES ($1,$2,$3,$4,'any_inbound')
+         ON CONFLICT (email_address) DO UPDATE
+           SET api_key = EXCLUDED.api_key,
+               refresh_token = EXCLUDED.refresh_token,
+               updated_at = NOW()
+        `,
+        [userId, emailAddress, apiKey, tokens.refresh_token!]
+      )
 
       res
         .status(200)
@@ -157,16 +162,13 @@ async function main() {
   })
 
   app.put("/settings", requireApiKey(), async (req, res) => {
-    const apiKey = String(req.header("X-API-Key") ?? "").trim()
     const cancelRule = String((req.body ?? {}).cancelRule ?? "")
     if (cancelRule !== "any_inbound" && cancelRule !== "recipient_only") {
       res.status(400).json({ error: "invalid_cancel_rule" })
       return
     }
-    await withStore((store) => {
-      const auth = store.authByApiKey[apiKey]
-      if (auth) auth.cancelRule = cancelRule
-    })
+    const auth = (req as any).auth
+    await dbQuery(`UPDATE users SET cancel_rule = $1, updated_at = NOW() WHERE id = $2`, [cancelRule, auth.userId])
     res.json({ cancelRule })
   })
 
@@ -175,8 +177,8 @@ async function main() {
   // -----------------------------
   app.get("/jobs", requireApiKey(), async (req, res, next) => {
     try {
-      const apiKey = String(req.header("X-API-Key") ?? "").trim()
-      const jobs = await listJobsForApiKey(apiKey)
+      const auth = (req as any).auth
+      const jobs = await listJobsForUser(auth.userId)
       res.json({ jobs })
     } catch (e) {
       next(e)
@@ -185,7 +187,7 @@ async function main() {
 
   const createJobHandler: express.RequestHandler = async (req, res, next) => {
     try {
-      const apiKey = String(req.header("X-API-Key") ?? "").trim()
+      const auth = (req as any).auth
       const body = req.body ?? {}
 
       const type = String(body.type ?? "")
@@ -217,7 +219,7 @@ async function main() {
           res.status(400).json({ error: "missing_followup_html" })
           return
         }
-        const job = await createJobForApiKey(apiKey, {
+        const job = await createJobForUser(auth.userId, {
           type: "followup",
           scheduledAt,
           sentAt,
@@ -230,7 +232,7 @@ async function main() {
       }
 
       const noteHtml = String(body.noteHtml ?? "")
-      const job = await createJobForApiKey(apiKey, {
+      const job = await createJobForUser(auth.userId, {
         type: "reminder",
         scheduledAt,
         sentAt,
@@ -257,9 +259,9 @@ async function main() {
 
   app.post("/jobs/:id/cancel", requireApiKey(), async (req, res, next) => {
     try {
-      const apiKey = String(req.header("X-API-Key") ?? "").trim()
+      const auth = (req as any).auth
       const id = String(req.params.id ?? "")
-      const job = await cancelJobForApiKey(apiKey, id)
+      const job = await cancelJobForUser(auth.userId, id)
       if (!job) {
         res.status(404).json({ error: "not_found" })
         return
@@ -282,7 +284,11 @@ async function main() {
     console.log(`[send-and-backend] listening on ${cfg.baseUrl} (port ${cfg.port})`)
   })
 
-  startScheduler()
+  // In production, run the scheduler in a dedicated worker if possible.
+  // Set RUN_SCHEDULER=false on the web service to disable.
+  if (String(process.env.RUN_SCHEDULER ?? "true").toLowerCase() !== "false") {
+    startScheduler()
+  }
 }
 
 main().catch((e) => {

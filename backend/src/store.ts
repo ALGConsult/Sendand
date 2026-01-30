@@ -1,8 +1,14 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import path from "node:path"
 
-import type { StoreShape } from "./types"
 import { getConfig } from "./config"
+
+// Legacy dev-only JSON store. The production backend uses Postgres.
+// Keep this file compiling for local fallback/testing.
+type StoreShape = {
+  authByApiKey: Record<string, unknown>
+  jobsById: Record<string, unknown>
+}
 
 function defaultStore(): StoreShape {
   return {
