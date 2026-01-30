@@ -61,6 +61,7 @@ export type ReminderJob = {
   originalDateHeader?: string
   originalSubjectHeader?: string
   lastError?: string
+  followUpHtml?: string
 }
 
 export type Job = FollowupJob | ReminderJob
