@@ -1,8 +1,11 @@
-import { Pool } from "pg"
+import pg from "pg"
+import type { Pool as PgPool } from "pg"
 
 import { getConfig } from "./config.js"
 
-let pool: Pool | null = null
+const { Pool } = pg
+
+let pool: PgPool | null = null
 
 function shouldUseSsl(connectionString: string): boolean {
   const mode = String(process.env.PGSSLMODE ?? "").toLowerCase()
@@ -20,7 +23,7 @@ function shouldUseSsl(connectionString: string): boolean {
   return String(process.env.NODE_ENV ?? "").toLowerCase() === "production"
 }
 
-export function getPool(): Pool {
+export function getPool(): PgPool {
   if (pool) return pool
 
   const cfg = getConfig()
