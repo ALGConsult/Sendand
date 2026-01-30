@@ -156,7 +156,7 @@ async function executeDueJob(authEmail: string, cancelRule: "any_inbound" | "rec
         htmlBody: await (async () => {
           // Include quoted original message so the follow-up contains the prior chain context.
           const originalHtml = job.originalMessageGmailId ? await getMessageBodyHtml(accessToken, job.originalMessageGmailId) : ""
-          if (!originalHtml) return job.followUpHtml
+          if (!originalHtml) return job.followUpHtml ?? ""
 
           const quoted = `
             ${buildOriginalHeaderBlockHtml({
