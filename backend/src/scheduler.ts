@@ -1,6 +1,6 @@
 import type { CancelRule, Job, StoredAuth } from "./types"
 import { dbQuery } from "./db.js"
-import { getAccessToken, getMessageBodyHtml, getMessageMetadata, getThreadMetadata, searchSentMessage, sendReminderEmail, sendReplyInThread, threadHasInboundReply } from "./gmail"
+import { getAccessToken, getMessageBodyHtml, getMessageMetadata, getThreadMetadata, searchSentMessage, sendReminderEmail, sendReplyInThread, threadHasInboundReply } from "./gmail.js"
 
 function nowIso(): string {
   return new Date().toISOString()

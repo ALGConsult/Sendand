@@ -1,4 +1,4 @@
-import { refreshAccessToken } from "./google"
+import { refreshAccessToken } from "./google.js"
 import type { StoredAuth } from "./types"
 
 type GmailListResponse = {

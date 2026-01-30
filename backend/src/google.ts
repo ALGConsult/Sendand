@@ -1,6 +1,6 @@
 import crypto from "node:crypto"
 
-import { getConfig } from "./config"
+import { getConfig } from "./config.js"
 
 export type GoogleTokens = {
   access_token: string

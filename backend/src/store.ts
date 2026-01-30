@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import path from "node:path"
 
-import { getConfig } from "./config"
+import { getConfig } from "./config.js"
 
 // Legacy dev-only JSON store. The production backend uses Postgres.
 // Keep this file compiling for local fallback/testing.
