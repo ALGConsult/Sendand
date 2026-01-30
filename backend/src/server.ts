@@ -2,12 +2,12 @@ import "dotenv/config"
 
 import express from "express"
 
-import { getConfig } from "./config"
-import { requireApiKey } from "./auth"
-import { exchangeCodeForTokens, generateApiKey, generateState, getGoogleAuthUrl, getGoogleUserEmail } from "./google"
-import { nowIso, withStore } from "./store"
-import { cancelJobForApiKey, createJobForApiKey, isValidIso, listJobsForApiKey, normalizeRecipients } from "./jobs"
-import { startScheduler } from "./scheduler"
+import { getConfig } from "./config.js"
+import { requireApiKey } from "./auth.js"
+import { exchangeCodeForTokens, generateApiKey, generateState, getGoogleAuthUrl, getGoogleUserEmail } from "./google.js"
+import { nowIso, withStore } from "./store.js"
+import { cancelJobForApiKey, createJobForApiKey, isValidIso, listJobsForApiKey, normalizeRecipients } from "./jobs.js"
+import { startScheduler } from "./scheduler.js"
 
 function allowCors(allowedOriginsRaw: string) {
   const allowed = allowedOriginsRaw
