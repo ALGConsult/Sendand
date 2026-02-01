@@ -96,9 +96,44 @@ export default function SettingsPanel(props: { mode?: SettingsPanelMode }) {
   const connectGmail = async () => {
     setError(null)
     setNotice(null)
-    const url = `${DEFAULT_BACKEND_URL.replace(/\/+$/, "")}/auth/google/start`
-    chrome.tabs.create({ url })
-    setNotice("Opened Google sign-in in a new tab. After finishing, paste the API key here.")
+    const backendOrigin = new URL(DEFAULT_BACKEND_URL).origin
+    const extId = chrome.runtime.id
+    const url = `${DEFAULT_BACKEND_URL.replace(/\/+$/, "")}/auth/google/start?extId=${encodeURIComponent(extId)}`
+
+    const w = window.open(url, "sendand_oauth", "popup,width=520,height=680")
+
+    // Fallback: if popups are blocked, open in a tab (manual copy/paste still works).
+    if (!w) {
+      chrome.tabs.create({ url })
+      setNotice("Opened Google sign-in in a new tab. After finishing, paste the API key here.")
+      return
+    }
+
+    setNotice("Complete Google sign-in in the popup. We’ll save your API key automatically.")
+
+    const onMessage = async (event: MessageEvent) => {
+      if (event.origin !== backendOrigin) return
+      const data = event.data as any
+      if (!data || data.type !== "sendand_api_key") return
+
+      const key = typeof data.apiKey === "string" ? data.apiKey : ""
+      if (!key) return
+
+      window.removeEventListener("message", onMessage)
+      try {
+        w.close()
+      } catch {
+        // ignore
+      }
+
+      setApiKey(key)
+      await storageSet({ apiKey: key })
+      setNotice("Connected. API key saved.")
+      // refresh list/settings
+      refresh().catch(() => {})
+    }
+
+    window.addEventListener("message", onMessage)
   }
 
   const refresh = async () => {

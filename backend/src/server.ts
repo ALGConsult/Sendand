@@ -55,15 +55,20 @@ async function main() {
   // -----------------------------
   // OAuth: connect Gmail
   // -----------------------------
-  const oauthStateIssuedAt = new Map<string, number>()
+  const oauthStateIssuedAt = new Map<string, { issuedAt: number; extOrigin?: string }>()
 
-  app.get("/auth/google/start", (_req, res) => {
+  const isChromeExtensionId = (s: string): boolean => /^[a-p]{32}$/.test(s)
+
+  app.get("/auth/google/start", (req, res) => {
     try {
       const state = generateState()
-      oauthStateIssuedAt.set(state, Date.now())
+      const extId = String(req.query.extId ?? "").trim()
+      const extOrigin = isChromeExtensionId(extId) ? `chrome-extension://${extId}` : undefined
+
+      oauthStateIssuedAt.set(state, { issuedAt: Date.now(), extOrigin })
       // prune a bit
-      for (const [k, t] of oauthStateIssuedAt.entries()) {
-        if (Date.now() - t > 10 * 60_000) oauthStateIssuedAt.delete(k)
+      for (const [k, meta] of oauthStateIssuedAt.entries()) {
+        if (Date.now() - meta.issuedAt > 10 * 60_000) oauthStateIssuedAt.delete(k)
       }
       res.redirect(getGoogleAuthUrl(state))
     } catch (e: any) {
@@ -85,8 +90,8 @@ async function main() {
         res.status(400).type("text/plain").send("Missing code/state")
         return
       }
-      const issuedAt = oauthStateIssuedAt.get(state)
-      if (!issuedAt || Date.now() - issuedAt > 10 * 60_000) {
+      const meta = oauthStateIssuedAt.get(state)
+      if (!meta || Date.now() - meta.issuedAt > 10 * 60_000) {
         res.status(400).type("text/plain").send("Invalid/expired state. Try again.")
         return
       }
@@ -137,6 +142,9 @@ async function main() {
   <body>
     <h2>Gmail connected</h2>
     <div class="card">
+      <div id="sendand-auto" class="muted" style="display:none; margin-bottom: 10px;">
+        Returning to the extension…
+      </div>
       <div class="muted">Signed in as</div>
       <div style="font-weight: 700; margin-bottom: 12px;">${emailAddress}</div>
       <div class="muted">API key (paste into the extension Settings page)</div>
@@ -145,6 +153,24 @@ async function main() {
         Keep this API key private. Anyone with it can schedule follow-ups from your account via this backend.
       </p>
     </div>
+
+    <script>
+      (function () {
+        try {
+          var extOrigin = ${JSON.stringify(meta.extOrigin ?? "")};
+          if (!extOrigin) return;
+          if (!window.opener || window.opener.closed) return;
+          var payload = { type: "sendand_api_key", apiKey: ${JSON.stringify(apiKey)}, email: ${JSON.stringify(emailAddress)} };
+          // Send only to the extension origin (prevents leaking to random openers).
+          window.opener.postMessage(payload, extOrigin);
+          var el = document.getElementById("sendand-auto");
+          if (el) el.style.display = "block";
+          window.setTimeout(function () { window.close(); }, 600);
+        } catch (e) {
+          // ignore and fall back to manual copy/paste
+        }
+      })();
+    </script>
   </body>
 </html>`
         )
