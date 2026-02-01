@@ -1,7 +1,7 @@
 {
   "name": "send-and",
   "displayName": "Send and",
-  "version": "0.0.1",
+  "version": "0.0.5",
   "description": "Send&",
   "author": "ALG consult",
   "scripts": {
@@ -30,7 +30,7 @@
       "storage"
     ],
     "host_permissions": [
-      "https://*/*"
+      "https://sendandbackend.onrender.com/*"
     ]
   }
 }

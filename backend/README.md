@@ -40,13 +40,15 @@ npm run dev
 
 - **Web Service (API)**:
   - Root directory: `backend`
-  - Build: `npm install && npm run build`
+  - Build: `npm run render-build`
   - Start: `npm run start`
+  - Env: set **`RUN_SCHEDULER=false`** (scheduler runs in the worker)
 
 - **Background Worker (Scheduler)**:
   - Root directory: `backend`
-  - Build: `npm install && npm run build`
+  - Build: `npm run render-build`
   - Start: `npm run start:worker`
+  - Env: leave `RUN_SCHEDULER` unset or set to `true`
 
 ### Notes
 - This backend runs `ensureSchema()` on startup to create the required tables if missing.

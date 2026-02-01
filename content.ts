@@ -1,4 +1,8 @@
-export {}
+import type { PlasmoCSConfig } from "plasmo"
+
+export const config: PlasmoCSConfig = {
+  matches: ["https://mail.google.com/*"],
+}
 
 // Hard gate: this script must only run on Gmail.
 // (Even if content script matching is misconfigured, we do nothing elsewhere.)
@@ -7,26 +11,8 @@ if (location.hostname !== "mail.google.com") {
   // eslint-disable-next-line no-console
   console.debug("[Send&] inactive (not Gmail)", { host: location.hostname })
 } else {
-const existing = document.getElementById("sendand-badge")
-if (!existing) {
-  const badge = document.createElement("div")
-  badge.id = "sendand-badge"
-  badge.textContent = "Send& running"
-  badge.style.position = "fixed"
-  badge.style.bottom = "12px"
-  badge.style.right = "12px"
-  badge.style.zIndex = "999999"
-  badge.style.padding = "6px 10px"
-  badge.style.background = "black"
-  badge.style.color = "white"
-  badge.style.fontSize = "12px"
-  badge.style.borderRadius = "8px"
-  badge.style.opacity = "0.85"
-  document.body.appendChild(badge)
-}
-
-// Also used as a global "we are alive" marker.
-document.documentElement?.setAttribute("data-sendand", "1")
+  // Also used as a global "we are alive" marker.
+  document.documentElement?.setAttribute("data-sendand", "1")
 
 const LOG_PREFIX = "Send&"
 const log = (event: string, details?: unknown) => {
@@ -35,15 +21,15 @@ const log = (event: string, details?: unknown) => {
 }
 
 type ExtensionSettings = {
-  backendUrl: string
   apiKey: string
 }
+
+const DEFAULT_BACKEND_URL = "https://sendandbackend.onrender.com"
 
 function getExtensionSettings(): Promise<ExtensionSettings> {
   return new Promise((resolve) => {
     chrome.storage.sync.get(
       {
-        backendUrl: "https://sendandbackend.onrender.com",
         apiKey: "",
       },
       (items) => resolve(items as ExtensionSettings)
@@ -1012,10 +998,9 @@ function openPopover(ctx: ComposeContext): void {
 
     const schedule = async () => {
       const settings = await getExtensionSettings()
-      const backendUrl = norm(settings.backendUrl)
       const apiKey = norm(settings.apiKey)
-      if (!backendUrl || !apiKey) {
-        showToast("Sent. Configure backend URL + API key in Send& Settings.")
+      if (!apiKey) {
+        showToast("Sent. Configure API key in Send& Settings.")
         return
       }
 
@@ -1030,7 +1015,7 @@ function openPopover(ctx: ComposeContext): void {
 
       if (activeTab === "followup") {
         log("action chosen: send+followup", { when: followupDate, hasMessage: isMeaningful(followupHtml) })
-        await apiPost("/jobs/followup", apiKey, backendUrl, {
+        await apiPost("/jobs/followup", apiKey, DEFAULT_BACKEND_URL, {
           scheduledAt: scheduledAtIso,
           sentAt: sentAtIso,
           to,
@@ -1040,7 +1025,7 @@ function openPopover(ctx: ComposeContext): void {
         showToast("Sent. Follow-up scheduled.")
       } else {
         log("action chosen: send+remind", { when: remindDate, hasMessage: isMeaningful(remindHtml) })
-        await apiPost("/jobs/reminder", apiKey, backendUrl, {
+        await apiPost("/jobs/reminder", apiKey, DEFAULT_BACKEND_URL, {
           scheduledAt: scheduledAtIso,
           sentAt: sentAtIso,
           to,
