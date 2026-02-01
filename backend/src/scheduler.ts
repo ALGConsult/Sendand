@@ -394,12 +394,19 @@ export async function schedulerTick(): Promise<void> {
 
     // Execute due jobs
     for (const r of jobRows) {
-      let job = rowToJob(r)
+      const job = rowToJob(r)
+      const wasDue = isDue(job, nowMs)
+      const prevStatus = job.status
+      const prevError = job.lastError
+
       const updated = await executeDueJob(auth.emailAddress, auth.cancelRule, job, accessToken)
-      if (updated !== job || updated.status !== job.status || updated.lastError !== job.lastError) {
-        await persistJob(u.id, updated)
-      } else if (isDue(job, nowMs)) {
-        // still persist to capture any resolution side-effects (e.g. reminder/followup resolution)
+
+      // IMPORTANT: `executeDueJob` mutates `job` in-place, so we must not use `isDue(job, nowMs)`
+      // *after* execution to decide persistence (it returns false once status becomes "sent").
+      // Persist whenever:
+      // - the job was due before execution, or
+      // - execution updated status/error (e.g. pending_thread, failed, cancelled, sent).
+      if (wasDue || updated.status !== prevStatus || updated.lastError !== prevError) {
         await persistJob(u.id, updated)
       }
     }
