@@ -67,6 +67,7 @@ export default function SettingsPanel(props: { mode?: SettingsPanelMode }) {
   const mode: SettingsPanelMode = props.mode ?? "options"
 
   const [apiKey, setApiKey] = useState("")
+  const [emailAddress, setEmailAddress] = useState("")
 
   const [cancelRule, setCancelRule] = useState<CancelRule>("any_inbound")
 
@@ -75,22 +76,28 @@ export default function SettingsPanel(props: { mode?: SettingsPanelMode }) {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
 
-  const canCallApi = useMemo(() => norm(apiKey).length > 0, [apiKey])
+  const isConnected = useMemo(() => norm(apiKey).length > 0, [apiKey])
+  const canCallApi = isConnected
 
   useEffect(() => {
     ;(async () => {
       const items = await storageGet({
         apiKey: "",
+        emailAddress: "",
       })
       setApiKey(items.apiKey || "")
+      setEmailAddress((items as any).emailAddress || "")
     })()
   }, [])
 
-  const saveBackend = async () => {
+  const disconnect = async () => {
     setError(null)
     setNotice(null)
-    await storageSet({ apiKey: norm(apiKey) })
-    setNotice("Saved.")
+    await storageSet({ apiKey: "", emailAddress: "" })
+    setApiKey("")
+    setEmailAddress("")
+    setJobs([])
+    setNotice("Disconnected.")
   }
 
   const connectGmail = async () => {
@@ -102,14 +109,12 @@ export default function SettingsPanel(props: { mode?: SettingsPanelMode }) {
 
     const w = window.open(url, "sendand_oauth", "popup,width=520,height=680")
 
-    // Fallback: if popups are blocked, open in a tab (manual copy/paste still works).
     if (!w) {
-      chrome.tabs.create({ url })
-      setNotice("Opened Google sign-in in a new tab. After finishing, paste the API key here.")
+      setNotice("Popup blocked. Please allow popups for this page and click Connect again.")
       return
     }
 
-    setNotice("Complete Google sign-in in the popup. We’ll save your API key automatically.")
+    setNotice("Complete Google sign-in in the popup. We’ll connect automatically.")
 
     const onMessage = async (event: MessageEvent) => {
       if (event.origin !== backendOrigin) return
@@ -117,6 +122,7 @@ export default function SettingsPanel(props: { mode?: SettingsPanelMode }) {
       if (!data || data.type !== "sendand_api_key") return
 
       const key = typeof data.apiKey === "string" ? data.apiKey : ""
+      const email = typeof data.email === "string" ? data.email : ""
       if (!key) return
 
       window.removeEventListener("message", onMessage)
@@ -127,8 +133,9 @@ export default function SettingsPanel(props: { mode?: SettingsPanelMode }) {
       }
 
       setApiKey(key)
-      await storageSet({ apiKey: key })
-      setNotice("Connected. API key saved.")
+      setEmailAddress(email)
+      await storageSet({ apiKey: key, emailAddress: email })
+      setNotice("Connected.")
       // refresh list/settings
       refresh().catch(() => {})
     }
@@ -214,26 +221,38 @@ export default function SettingsPanel(props: { mode?: SettingsPanelMode }) {
       <h2 style={{ margin: "0 0 12px 0" }}>Send& Settings</h2>
 
       <div style={{ display: "grid", gap: 10, border: "1px solid rgba(0,0,0,.12)", borderRadius: 12, padding: 12 }}>
-        <div style={{ display: "grid", gap: 6 }}>
-          <label style={{ fontWeight: 700 }}>API key</label>
-          <input
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            placeholder="Paste from the OAuth completion page"
-            style={{ padding: 8, borderRadius: 8, border: "1px solid rgba(0,0,0,.2)" }}
-          />
-        </div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+          <div style={{ display: "grid", gap: 4 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 800 }}>
+              <span
+                aria-label={isConnected ? "Connected" : "Disconnected"}
+                title={isConnected ? "Connected" : "Disconnected"}
+                style={{
+                  width: 10,
+                  height: 10,
+                  borderRadius: 999,
+                  background: isConnected ? "rgb(34, 197, 94)" : "rgb(239, 68, 68)",
+                  boxShadow: "0 0 0 3px rgba(0,0,0,.06)",
+                }}
+              />
+              {isConnected ? "Connected" : "Disconnected"}
+            </div>
+            {isConnected && emailAddress ? <div style={{ color: "rgba(0,0,0,.65)" }}>{emailAddress}</div> : null}
+          </div>
 
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button onClick={saveBackend} style={{ padding: "8px 12px", borderRadius: 8 }}>
-            Save
-          </button>
-          <button onClick={connectGmail} style={{ padding: "8px 12px", borderRadius: 8 }}>
-            Connect Gmail
-          </button>
-          <button disabled={!canCallApi || busy} onClick={refresh} style={{ padding: "8px 12px", borderRadius: 8 }}>
-            Refresh
-          </button>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+            <button onClick={connectGmail} style={{ padding: "8px 12px", borderRadius: 8 }}>
+              {isConnected ? "Reconnect" : "Connect Gmail"}
+            </button>
+            {isConnected ? (
+              <button onClick={disconnect} style={{ padding: "8px 12px", borderRadius: 8 }}>
+                Disconnect
+              </button>
+            ) : null}
+            <button disabled={!canCallApi || busy} onClick={refresh} style={{ padding: "8px 12px", borderRadius: 8 }}>
+              Refresh
+            </button>
+          </div>
         </div>
 
         <div style={{ display: "grid", gap: 6 }}>
@@ -278,7 +297,7 @@ export default function SettingsPanel(props: { mode?: SettingsPanelMode }) {
             {jobs.length === 0 ? (
               <tr>
                 <td colSpan={6} style={{ padding: 12, color: "rgba(0,0,0,.65)" }}>
-                  {canCallApi ? "No jobs." : "Enter API key, then Refresh."}
+                  {canCallApi ? "No jobs." : "Connect Gmail to view scheduled jobs."}
                 </td>
               </tr>
             ) : (
