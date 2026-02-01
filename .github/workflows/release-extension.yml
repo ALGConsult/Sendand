@@ -2,6 +2,11 @@ name: Release prebuilt extension zip
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Release tag (e.g. v0.0.4). Leave empty to skip creating a GitHub Release and only upload an artifact."
+        required: false
+        type: string
   push:
     tags:
       - "v*"
@@ -33,15 +38,22 @@ jobs:
       - name: Verify zip exists
         run: test -f build/chrome-mv3-prod.zip
 
+      - name: Debug build output
+        run: ls -la build
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: sendand-chrome-mv3-prod
           path: build/chrome-mv3-prod.zip
 
-      - name: Publish GitHub Release (tags only)
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Publish GitHub Release (tag push or manual)
+        if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.version != '')
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || inputs.version }}
+          name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || inputs.version }}
+          generate_release_notes: true
           files: build/chrome-mv3-prod.zip
+          fail_on_unmatched_files: true
 
