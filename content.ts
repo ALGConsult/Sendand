@@ -43,7 +43,7 @@ function getExtensionSettings(): Promise<ExtensionSettings> {
   return new Promise((resolve) => {
     chrome.storage.sync.get(
       {
-        backendUrl: "http://localhost:8787",
+        backendUrl: "https://sendandbackend.onrender.com",
         apiKey: "",
       },
       (items) => resolve(items as ExtensionSettings)

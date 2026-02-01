@@ -19,7 +19,7 @@ type BackendSettings = {
   cancelRule: CancelRule
 }
 
-const DEFAULT_BACKEND_URL = "http://localhost:8787"
+const DEFAULT_BACKEND_URL = "https://sendandbackend.onrender.com"
 
 function norm(s: string): string {
   return (s ?? "").trim()
