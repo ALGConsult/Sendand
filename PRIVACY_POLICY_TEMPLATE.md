@@ -1,6 +1,6 @@
 ## Privacy Policy (Template) — Send&
 
-Last updated: \<DATE\>
+Last updated: 02/02/2026
 
 ### Summary
 Send& helps you send emails in Gmail and schedule follow-ups/reminders. It requires Google OAuth access to your Gmail account to detect replies and send scheduled messages.
